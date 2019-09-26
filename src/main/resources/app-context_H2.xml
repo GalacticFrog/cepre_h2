@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:tx="http://www.springframework.org/schema/tx"
+       xmlns:p="http://www.springframework.org/schema/p"
+       xmlns:jdbc="http://www.springframework.org/schema/jdbc"
+       xmlns:util="http://www.springframework.org/schema/util"
+       xsi:schemaLocation="
+      http://www.springframework.org/schema/jdbc
+      http://www.springframework.org/schema/jdbc/spring-jdbc.xsd
+      http://www.springframework.org/schema/beans
+      http://www.springframework.org/schema/beans/spring-beans.xsd
+      http://www.springframework.org/schema/tx
+      http://www.springframework.org/schema/tx/spring-tx.xsd
+      http://www.springframework.org/schema/util
+      http://www.springframework.org/schema/util/spring-util.xsd
+      http://www.springframework.org/schema/context
+      http://www.springframework.org/schema/context/spring-context.xsd">
+
+    <!--    <jdbc:embedded-database id="dataSource" type="H2">
+        <jdbc:script location="classpath:META-INF/sql/schema.sql"/>
+        <jdbc:script location="classpath:META-INF/sql/test-data.sql"/>
+    </jdbc:embedded-database>-->
+    <!-- Config -->
+    <context:annotation-config />
+    <bean class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+        <property name="location" value = "classpath:config.properties" />
+    </bean>
+    <bean id="appEnviroment" class="com.flesoft.cepre.util.ShiroUtils">
+    </bean>
+    <!--    <context:property-placeholder location="file:config.properties" />-->
+    <!-- shiro -->
+    <bean id="sha512Matcher" class="org.apache.shiro.authc.credential.HashedCredentialsMatcher">
+        <!-- Modifying any piece of the matcher will likely invalidate the ability to match any passphrases in the DB -->
+        <property name="hashAlgorithmName" value="${shiro.hashAlgorithmName}" />
+        <property name="storedCredentialsHexEncoded" value="${shiro.storedCredentialsHexEncoded}" />
+        <property name="hashIterations" value="${shiro.hashIterations}" />
+    </bean>
+    <bean id="myRealm" class="org.apache.shiro.realm.jdbc.JdbcRealm">
+        <property name="dataSource" ref="dataSource"/>
+        <property name="authenticationQuery" value="select passphrase, CONCAT('${shiro.applicationSalt}', ':', salt) as salt from usuario where usuario = ?"/>
+        <property name="userRolesQuery" value="SELECT rol FROM rol LEFT JOIN usuario_rol ON rol.id = usuario_rol.rol_id LEFT JOIN usuario ON usuario_rol.usuario_id = usuario.id WHERE usuario = ?"/>
+        <property name="permissionsQuery" value="SELECT permiso FROM rol_permiso LEFT JOIN rol ON rol_permiso.rol_id = rol.id WHERE rol.rol = ?"/>
+        <property name="permissionsLookupEnabled" value="true"/>
+        <property name="saltStyle" value="COLUMN"/>
+        <property name="credentialsMatcher" ref="sha512Matcher"/>
+    </bean>
+
+    <bean id="securityManager" class="org.apache.shiro.mgt.DefaultSecurityManager">
+        <!-- Single realm app.  If you have multiple realms, use the 'realms' property instead. -->
+        <property name="realm" ref="myRealm"/>
+    </bean>
+    <!-- shiro annotations-->
+    <!-- Enable Shiro Annotations for Spring-configured beans.  Only run after -->
+    <!-- the lifecycleBeanProcessor has run: -->
+    <bean class="org.springframework.aop.framework.autoproxy.DefaultAdvisorAutoProxyCreator" depends-on="lifecycleBeanPostProcessor"/>
+    <bean class="org.apache.shiro.spring.security.interceptor.AuthorizationAttributeSourceAdvisor">
+        <property name="securityManager" ref="securityManager"/>
+    </bean>
+    <!-- /shiro annotations-->
+    <bean id="lifecycleBeanPostProcessor" class="org.apache.shiro.spring.LifecycleBeanPostProcessor"/>
+
+    <!-- For simplest integration, so that all SecurityUtils.* methods work in all cases, -->
+    <!-- make the securityManager bean a static singleton.  DO NOT do this in web         -->
+    <!-- applications - see the 'Web Applications' section below instead.                 -->
+    <bean class="org.springframework.beans.factory.config.MethodInvokingFactoryBean">
+        <property name="staticMethod" value="org.apache.shiro.SecurityUtils.setSecurityManager"/>
+        <property name="arguments" ref="securityManager"/>
+    </bean>
+    <!-- connection pool -->
+    <!--    <bean id="hikariConfig" class="com.zaxxer.hikari.HikariConfig">
+        <property name="poolName" value="springHikariCP" />
+        <property name="connectionTestQuery" value="SELECT 1" />
+        <property name="dataSourceClassName" value="com.mysql.jdbc.jdbc2.optional.MysqlDataSource" />
+        <property name="dataSourceProperties">
+            <props>
+                <prop key="url">${jdbc.url}</prop>
+                <prop key="user">${jdbc.username}</prop>
+                <prop key="password">${jdbc.password}</prop>
+            </props>
+        </property>
+    </bean>
+    <bean id="dataSource" class="com.zaxxer.hikari.HikariDataSource" destroy-method="close">
+        <constructor-arg ref="hikariConfig" />
+    </bean>-->
+    <bean id="dataSource" class="org.apache.commons.dbcp2.BasicDataSource" destroy-method="close">
+        <property name="driverClassName" value="${jdbc.driver}" />
+        <property name="url" value="${jdbc.url}" />
+        <property name="username" value="${jdbc.username}" />
+        <property name="password" value="${jdbc.password}" />
+    </bean>
+    <tx:annotation-driven/>
+
+    <context:component-scan base-package="com.flesoft.cepre.dao"/>
+
+    <bean id="transactionManager"
+          class="org.springframework.orm.hibernate5.HibernateTransactionManager"
+          p:sessionFactory-ref="sessionFactory"/>
+
+    <bean id="sessionFactory"
+          class="org.springframework.orm.hibernate5.LocalSessionFactoryBean"
+          p:dataSource-ref="dataSource"
+          p:packagesToScan="com.flesoft.cepre.model"
+          p:hibernateProperties-ref="hibernateProperties"/>
+
+
+
+    <util:properties id="hibernateProperties">
+        <prop key="hibernate.dialect">org.hibernate.dialect.H2Dialect</prop>
+        <prop key="hibernate.max_fetch_depth">3</prop>
+        <prop key="hibernate.jdbc.fetch_size">50</prop>
+        <prop key="hibernate.jdbc.batch_size">10</prop>
+        <prop key="hibernate.show_sql">true</prop>
+    </util:properties>
+</beans>
